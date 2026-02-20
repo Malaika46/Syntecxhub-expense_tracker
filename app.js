@@ -20,44 +20,40 @@ const CATEGORIES = [
     { id: 'other', name: 'Other', icon: 'fa-ellipsis-h', color: '#6b7280' }
 ];
 
-// Mock API Functions
-const mockFetchExpenses = () => new Promise((resolve) => {
-    setTimeout(() => {
-        const expenses = [];
-        const categories = ['food', 'transport', 'utilities', 'entertainment', 'shopping', 'health', 'education', 'other'];
-        const titles = {
-            food: ['Groceries', 'Restaurant', 'Coffee Shop', 'Fast Food', 'Food Delivery'],
-            transport: ['Gas', 'Uber', 'Bus Pass', 'Car Maintenance', 'Parking'],
-            utilities: ['Electric Bill', 'Water Bill', 'Internet', 'Phone Bill', 'Gas Bill'],
-            entertainment: ['Netflix', 'Movie Tickets', 'Concert', 'Video Games', 'Spotify'],
-            shopping: ['Clothes', 'Electronics', 'Home Decor', 'Amazon', 'Superstore'],
-            health: ['Pharmacy', 'Doctor Visit', 'Gym Membership', 'Dentist', 'Therapy'],
-            education: ['Books', 'Online Course', 'Tuition', 'Workshop', 'Software License'],
-            other: ['Miscellaneous', 'Gifts', 'Charity', 'Subscription', 'Fees']
-        };
+// Storage key for localStorage
+const STORAGE_KEY = 'expenses_pkr';
 
-        for (let i = 0; i < 50; i++) {
-            const category = categories[Math.floor(Math.random() * categories.length)];
-            const categoryTitles = titles[category];
-            const date = new Date();
-            date.setDate(date.getDate() - Math.floor(Math.random() * 30));
-            
-            expenses.push({
-                id: crypto.randomUUID(),
-                title: categoryTitles[Math.floor(Math.random() * categoryTitles.length)],
-                amount: Number((Math.random() * 200 + 5).toFixed(2)),
-                category: category,
-                date: date.toISOString().split('T')[0],
-                createdAt: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000,
-                notes: Math.random() > 0.7 ? 'Additional notes here...' : ''
-            });
+// Load expenses from localStorage
+const loadExpensesFromStorage = () => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            return JSON.parse(stored);
         }
-        
-        // Sort by date (most recent first)
-        expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
-        resolve(expenses);
-    }, 1000);
-});
+    } catch (error) {
+        console.error('Error loading expenses:', error);
+    }
+    return [];
+};
+
+// Save expenses to localStorage
+const saveExpensesToStorage = (expenses) => {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+    } catch (error) {
+        console.error('Error saving expenses:', error);
+    }
+};
+
+// Format currency in PKR
+const formatPKR = (amount) => {
+    return new Intl.NumberFormat('en-PK', {
+        style: 'currency',
+        currency: 'PKR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(amount);
+};
 
 // Chart Components
 const CategoryChart = ({ expenses }) => {
@@ -99,7 +95,19 @@ const CategoryChart = ({ expenses }) => {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            color: document.body.classList.contains('dark') ? '#f8fafc' : '#111827'
+                            color: document.body.classList.contains('dark') ? '#f8fafc' : '#111827',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                return `${label}: ${formatPKR(value)}`;
+                            }
                         }
                     }
                 },
@@ -124,7 +132,7 @@ const TrendChart = ({ expenses }) => {
     useEffect(() => {
         if (!chartRef.current || !expenses.length) return;
 
-        // Group by date
+        // Group by date for last 7 days
         const last7Days = [];
         const today = new Date();
         
@@ -147,14 +155,22 @@ const TrendChart = ({ expenses }) => {
         chartInstance.current = new Chart(chartRef.current, {
             type: 'line',
             data: {
-                labels: last7Days.map(date => new Date(date).toLocaleDateString('en-US', { weekday: 'short' })),
+                labels: last7Days.map(date => {
+                    const d = new Date(date);
+                    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                }),
                 datasets: [{
                     label: 'Daily Expenses',
                     data: dailyTotals,
                     borderColor: '#6366f1',
                     backgroundColor: 'rgba(99, 102, 241, 0.1)',
                     tension: 0.4,
-                    fill: true
+                    fill: true,
+                    pointBackgroundColor: '#6366f1',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
                 }]
             },
             options: {
@@ -163,6 +179,13 @@ const TrendChart = ({ expenses }) => {
                 plugins: {
                     legend: {
                         display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                return `Amount: ${formatPKR(context.raw)}`;
+                            }
+                        }
                     }
                 },
                 scales: {
@@ -172,7 +195,8 @@ const TrendChart = ({ expenses }) => {
                             color: document.body.classList.contains('dark') ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: document.body.classList.contains('dark') ? '#f8fafc' : '#111827'
+                            color: document.body.classList.contains('dark') ? '#f8fafc' : '#111827',
+                            callback: (value) => formatPKR(value)
                         }
                     },
                     x: {
@@ -180,7 +204,9 @@ const TrendChart = ({ expenses }) => {
                             display: false
                         },
                         ticks: {
-                            color: document.body.classList.contains('dark') ? '#f8fafc' : '#111827'
+                            color: document.body.classList.contains('dark') ? '#f8fafc' : '#111827',
+                            maxRotation: 45,
+                            minRotation: 45
                         }
                     }
                 }
@@ -220,12 +246,14 @@ function App() {
     const [currentScreen, setCurrentScreen] = useState(SCREEN.DASHBOARD);
     const [expenses, setExpenses] = useState([]);
     const [selectedExpense, setSelectedExpense] = useState(null);
-    const [darkMode, setDarkMode] = useState(false);
+    const [darkMode, setDarkMode] = useState(() => {
+        const saved = localStorage.getItem('darkMode');
+        return saved ? JSON.parse(saved) : false;
+    });
     const [isLoading, setIsLoading] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [toasts, setToasts] = useState([]);
-    const [isModalOpen, setIsModalOpen] = useState(false);
     const [validationErrors, setValidationErrors] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
@@ -246,47 +274,42 @@ function App() {
     const modalRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Load initial data
+    // Load initial data from localStorage
     useEffect(() => {
-        let mounted = true;
-
-        const loadExpenses = async () => {
-            try {
-                const apiExpenses = await mockFetchExpenses();
-                if (mounted) {
-                    setExpenses(apiExpenses);
-                    setIsLoading(false);
-                    showToast('Data loaded successfully!', 'success');
-                }
-            } catch (error) {
-                if (mounted) {
-                    setIsLoading(false);
-                    showToast('Error loading data', 'error');
-                }
-            }
+        const loadData = () => {
+            const savedExpenses = loadExpensesFromStorage();
+            setExpenses(savedExpenses);
+            setIsLoading(false);
         };
-
-        loadExpenses();
-        return () => { mounted = false; };
+        
+        // Simulate loading for smooth UX
+        setTimeout(loadData, 500);
     }, []);
 
-    // Theme sync
+    // Save expenses to localStorage whenever they change
     useEffect(() => {
+        if (!isLoading) {
+            saveExpensesToStorage(expenses);
+        }
+    }, [expenses, isLoading]);
+
+    // Save dark mode preference
+    useEffect(() => {
+        localStorage.setItem('darkMode', JSON.stringify(darkMode));
         document.body.className = darkMode ? 'dark' : '';
     }, [darkMode]);
 
-    // Auto focus
+    // Auto focus on title input when add/edit screen opens
     useEffect(() => {
-        if ((currentScreen === SCREEN.ADD || (currentScreen === SCREEN.EDIT && selectedExpense)) && titleInputRef.current) {
-            titleInputRef.current.focus();
+        if ((currentScreen === SCREEN.ADD || currentScreen === SCREEN.EDIT) && titleInputRef.current) {
+            setTimeout(() => titleInputRef.current.focus(), 100);
         }
-    }, [currentScreen, selectedExpense]);
+    }, [currentScreen]);
 
     // Click outside handler for modals
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (modalRef.current && !modalRef.current.contains(event.target)) {
-                setIsModalOpen(false);
                 setIsExportModalOpen(false);
             }
         };
@@ -303,32 +326,32 @@ function App() {
                 e.preventDefault();
                 navigateTo(SCREEN.ADD);
             }
-            // Ctrl/Cmd + F for search
-            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            // Ctrl/Cmd + F for search (only in reports)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f' && currentScreen === SCREEN.REPORTS) {
                 e.preventDefault();
                 searchInputRef.current?.focus();
             }
             // Escape to close modals
             if (e.key === 'Escape') {
-                setIsModalOpen(false);
                 setIsExportModalOpen(false);
                 setMobileMenuOpen(false);
+                setActiveDropdown(null);
             }
         };
 
         document.addEventListener('keydown', handleKeyPress);
         return () => document.removeEventListener('keydown', handleKeyPress);
-    }, []);
+    }, [currentScreen]);
 
     // Toast functions
-    const showToast = (message, type = 'info') => {
+    const showToast = useCallback((message, type = 'info') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
-    };
+    }, []);
 
-    const removeToast = (id) => {
+    const removeToast = useCallback((id) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
-    };
+    }, []);
 
     // Memoized calculations
     const totalExpenses = useMemo(() => 
@@ -431,6 +454,8 @@ function App() {
             errors.amount = 'Amount is required';
         } else if (isNaN(data.amount) || Number(data.amount) <= 0) {
             errors.amount = 'Amount must be a positive number';
+        } else if (Number(data.amount) > 10000000) {
+            errors.amount = 'Amount cannot exceed 10 million PKR';
         }
         
         if (!data.category) {
@@ -442,6 +467,7 @@ function App() {
         } else {
             const selectedDate = new Date(data.date);
             const today = new Date();
+            today.setHours(0, 0, 0, 0);
             if (selectedDate > today) {
                 errors.date = 'Date cannot be in the future';
             }
@@ -488,7 +514,7 @@ function App() {
         });
         setCurrentScreen(SCREEN.DASHBOARD);
         showToast('Expense added successfully!', 'success');
-    }, [formData]);
+    }, [formData, showToast]);
 
     const handleEditExpense = useCallback((event) => {
         event.preventDefault();
@@ -515,16 +541,18 @@ function App() {
         setSelectedExpense(null);
         setCurrentScreen(SCREEN.DASHBOARD);
         showToast('Expense updated successfully!', 'success');
-    }, [selectedExpense, formData]);
+    }, [selectedExpense, formData, showToast]);
 
     const handleDeleteExpense = useCallback((expenseId) => {
         if (window.confirm('Are you sure you want to delete this expense?')) {
             setExpenses(prev => prev.filter(expense => expense.id !== expenseId));
             setSelectedExpenses(prev => prev.filter(id => id !== expenseId));
-            setSelectedExpense(null);
+            if (selectedExpense?.id === expenseId) {
+                setSelectedExpense(null);
+            }
             showToast('Expense deleted successfully!', 'success');
         }
-    }, []);
+    }, [selectedExpense, showToast]);
 
     const handleBulkDelete = useCallback(() => {
         if (selectedExpenses.length === 0) {
@@ -535,27 +563,30 @@ function App() {
         if (window.confirm(`Are you sure you want to delete ${selectedExpenses.length} expenses?`)) {
             setExpenses(prev => prev.filter(expense => !selectedExpenses.includes(expense.id)));
             setSelectedExpenses([]);
+            if (selectedExpense && selectedExpenses.includes(selectedExpense.id)) {
+                setSelectedExpense(null);
+            }
             showToast(`${selectedExpenses.length} expenses deleted successfully!`, 'success');
         }
-    }, [selectedExpenses]);
+    }, [selectedExpenses, selectedExpense, showToast]);
 
-    const handleSelectExpense = (expenseId) => {
+    const handleSelectExpense = useCallback((expenseId) => {
         setSelectedExpenses(prev => 
             prev.includes(expenseId) 
                 ? prev.filter(id => id !== expenseId)
                 : [...prev, expenseId]
         );
-    };
+    }, []);
 
-    const handleSelectAll = () => {
+    const handleSelectAll = useCallback(() => {
         if (selectedExpenses.length === filteredExpenses.length) {
             setSelectedExpenses([]);
         } else {
             setSelectedExpenses(filteredExpenses.map(e => e.id));
         }
-    };
+    }, [selectedExpenses.length, filteredExpenses]);
 
-    const openEditModal = (expense) => {
+    const openEditModal = useCallback((expense) => {
         setSelectedExpense(expense);
         setFormData({
             title: expense.title,
@@ -565,9 +596,9 @@ function App() {
             notes: expense.notes || ''
         });
         setCurrentScreen(SCREEN.EDIT);
-    };
+    }, []);
 
-    const exportData = () => {
+    const exportData = useCallback(() => {
         let dataToExport = selectedExpenses.length > 0 
             ? expenses.filter(e => selectedExpenses.includes(e.id))
             : expenses;
@@ -578,7 +609,7 @@ function App() {
         switch(exportFormat) {
             case 'csv':
                 // Convert to CSV
-                const headers = ['Title', 'Amount', 'Category', 'Date', 'Notes'];
+                const headers = ['Title', 'Amount (PKR)', 'Category', 'Date', 'Notes'];
                 const csvData = dataToExport.map(e => 
                     [e.title, e.amount, e.category, e.date, e.notes || ''].join(',')
                 );
@@ -602,9 +633,9 @@ function App() {
         
         setIsExportModalOpen(false);
         showToast(`${dataToExport.length} expenses exported successfully!`, 'success');
-    };
+    }, [expenses, selectedExpenses, exportFormat, showToast]);
 
-    const importData = (event) => {
+    const importData = useCallback((event) => {
         const file = event.target.files[0];
         if (!file) return;
 
@@ -619,7 +650,8 @@ function App() {
                     ).map(e => ({
                         ...e,
                         id: e.id || crypto.randomUUID(),
-                        amount: Number(e.amount)
+                        amount: Number(e.amount),
+                        createdAt: e.createdAt || Date.now()
                     }));
 
                     setExpenses(prev => [...validExpenses, ...prev]);
@@ -632,10 +664,13 @@ function App() {
             }
         };
         reader.readAsText(file);
-    };
+        
+        // Reset file input
+        event.target.value = '';
+    }, [showToast]);
 
     // Navigation
-    const navigateTo = (screen, expense = null) => {
+    const navigateTo = useCallback((screen, expense = null) => {
         setMobileMenuOpen(false);
         setActiveDropdown(null);
         
@@ -650,17 +685,26 @@ function App() {
             });
         } else {
             setSelectedExpense(null);
+            if (screen === SCREEN.ADD) {
+                setFormData({
+                    title: '',
+                    amount: '',
+                    category: 'food',
+                    date: new Date().toISOString().split('T')[0],
+                    notes: ''
+                });
+            }
         }
         
         setCurrentScreen(screen);
-    };
+    }, []);
 
     // Render functions for each screen
     const renderDashboard = () => (
         <div className="screen">
             <div className="dashboard-header">
                 <h1>Dashboard</h1>
-                <p>Welcome back! Here's your financial overview.</p>
+                <p>Welcome back! Here's your financial overview in Pakistani Rupees.</p>
             </div>
 
             <div className="stats-grid">
@@ -670,10 +714,10 @@ function App() {
                     </div>
                     <div className="stat-content">
                         <h3>Total Expenses</h3>
-                        <p>${totalExpenses.toFixed(2)}</p>
+                        <p>{formatPKR(totalExpenses)}</p>
                         <div className="stat-trend">
-                            <i className="fas fa-arrow-up trend-up"></i>
-                            <span>+12.5% from last month</span>
+                            <i className="fas fa-chart-line"></i>
+                            <span>All time total</span>
                         </div>
                     </div>
                 </div>
@@ -684,24 +728,24 @@ function App() {
                     </div>
                     <div className="stat-content">
                         <h3>Today's Expenses</h3>
-                        <p>${todayExpenses.toFixed(2)}</p>
+                        <p>{formatPKR(todayExpenses)}</p>
                         <div className="stat-trend">
-                            <i className="fas fa-arrow-down trend-down"></i>
-                            <span>-5.2% from yesterday</span>
+                            <i className="fas fa-clock"></i>
+                            <span>{new Date().toLocaleDateString('en-PK')}</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="stat-card">
                     <div className="stat-icon">
-                        <i className="fas fa-chart-line"></i>
+                        <i className="fas fa-calendar-alt"></i>
                     </div>
                     <div className="stat-content">
                         <h3>Monthly Total</h3>
-                        <p>${monthlyExpenses.toFixed(2)}</p>
+                        <p>{formatPKR(monthlyExpenses)}</p>
                         <div className="stat-trend">
-                            <i className="fas fa-arrow-up trend-up"></i>
-                            <span>+8.3% from last month</span>
+                            <i className="fas fa-calendar"></i>
+                            <span>{new Date().toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })}</span>
                         </div>
                     </div>
                 </div>
@@ -712,10 +756,10 @@ function App() {
                     </div>
                     <div className="stat-content">
                         <h3>Average Expense</h3>
-                        <p>${averageExpense.toFixed(2)}</p>
+                        <p>{formatPKR(averageExpense)}</p>
                         <div className="stat-trend">
-                            <i className="fas fa-minus"></i>
-                            <span>Stable</span>
+                            <i className="fas fa-calculator"></i>
+                            <span>Per transaction</span>
                         </div>
                     </div>
                 </div>
@@ -725,14 +769,26 @@ function App() {
                 <div className="chart-card">
                     <h3>Spending by Category</h3>
                     <div className="chart-container">
-                        <CategoryChart expenses={expenses} />
+                        {expenses.length > 0 ? (
+                            <CategoryChart expenses={expenses} />
+                        ) : (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <p className="text-muted">No data to display</p>
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 <div className="chart-card">
                     <h3>7-Day Trend</h3>
                     <div className="chart-container">
-                        <TrendChart expenses={expenses} />
+                        {expenses.length > 0 ? (
+                            <TrendChart expenses={expenses} />
+                        ) : (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <p className="text-muted">No data to display</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -745,77 +801,87 @@ function App() {
                     </button>
                 </div>
 
-                <div className="expenses-table">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>
-                                    <input 
-                                        type="checkbox"
-                                        checked={selectedExpenses.length === recentExpenses.length && recentExpenses.length > 0}
-                                        onChange={handleSelectAll}
-                                    />
-                                </th>
-                                <th>Date</th>
-                                <th>Title</th>
-                                <th>Category</th>
-                                <th>Amount</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {recentExpenses.map(expense => (
-                                <tr key={expense.id} className="expense-row">
-                                    <td>
+                {expenses.length === 0 ? (
+                    <div className="empty-state">
+                        <i className="fas fa-receipt" style={{ fontSize: '3rem', color: 'var(--gray-400)', marginBottom: '1rem' }}></i>
+                        <p>No expenses yet. Click "Add Expense" to get started.</p>
+                        <button className="btn-primary" onClick={() => navigateTo(SCREEN.ADD)}>
+                            <i className="fas fa-plus"></i> Add Your First Expense
+                        </button>
+                    </div>
+                ) : (
+                    <div className="expenses-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>
                                         <input 
                                             type="checkbox"
-                                            checked={selectedExpenses.includes(expense.id)}
-                                            onChange={() => handleSelectExpense(expense.id)}
+                                            checked={selectedExpenses.length === recentExpenses.length && recentExpenses.length > 0}
+                                            onChange={handleSelectAll}
                                         />
-                                    </td>
-                                    <td>{new Date(expense.date).toLocaleDateString()}</td>
-                                    <td>{expense.title}</td>
-                                    <td>
-                                        <span className="category-badge" style={{
-                                            backgroundColor: CATEGORIES.find(c => c.id === expense.category)?.color + '20',
-                                            color: CATEGORIES.find(c => c.id === expense.category)?.color
-                                        }}>
-                                            <i className={`fas ${CATEGORIES.find(c => c.id === expense.category)?.icon}`}></i>
-                                            {' '}{CATEGORIES.find(c => c.id === expense.category)?.name}
-                                        </span>
-                                    </td>
-                                    <td>${expense.amount.toFixed(2)}</td>
-                                    <td>
-                                        <div className="action-buttons">
-                                            <button 
-                                                className="btn-icon"
-                                                onClick={() => openEditModal(expense)}
-                                                title="Edit (E)"
-                                            >
-                                                <i className="fas fa-edit"></i>
-                                            </button>
-                                            <button 
-                                                className="btn-icon danger"
-                                                onClick={() => handleDeleteExpense(expense.id)}
-                                                title="Delete (Del)"
-                                            >
-                                                <i className="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </td>
+                                    </th>
+                                    <th>Date</th>
+                                    <th>Title</th>
+                                    <th>Category</th>
+                                    <th>Amount (PKR)</th>
+                                    <th>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {recentExpenses.map(expense => (
+                                    <tr key={expense.id} className="expense-row">
+                                        <td>
+                                            <input 
+                                                type="checkbox"
+                                                checked={selectedExpenses.includes(expense.id)}
+                                                onChange={() => handleSelectExpense(expense.id)}
+                                            />
+                                        </td>
+                                        <td>{new Date(expense.date).toLocaleDateString('en-PK')}</td>
+                                        <td>{expense.title}</td>
+                                        <td>
+                                            <span className="category-badge" style={{
+                                                backgroundColor: CATEGORIES.find(c => c.id === expense.category)?.color + '20',
+                                                color: CATEGORIES.find(c => c.id === expense.category)?.color
+                                            }}>
+                                                <i className={`fas ${CATEGORIES.find(c => c.id === expense.category)?.icon}`}></i>
+                                                {' '}{CATEGORIES.find(c => c.id === expense.category)?.name}
+                                            </span>
+                                        </td>
+                                        <td>{formatPKR(expense.amount)}</td>
+                                        <td>
+                                            <div className="action-buttons">
+                                                <button 
+                                                    className="btn-icon"
+                                                    onClick={() => openEditModal(expense)}
+                                                    title="Edit"
+                                                >
+                                                    <i className="fas fa-edit"></i>
+                                                </button>
+                                                <button 
+                                                    className="btn-icon danger"
+                                                    onClick={() => handleDeleteExpense(expense.id)}
+                                                    title="Delete"
+                                                >
+                                                    <i className="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
 
                 {selectedExpenses.length > 0 && (
                     <div className="bulk-actions">
-                        <span>{selectedExpenses.length} items selected</span>
-                        <button className="danger-btn" onClick={handleBulkDelete}>
+                        <span>{selectedExpenses.length} item(s) selected</span>
+                        <button className="btn-danger" onClick={handleBulkDelete}>
                             <i className="fas fa-trash"></i> Delete Selected
                         </button>
-                        <button className="primary" onClick={() => setIsExportModalOpen(true)}>
+                        <button className="btn-primary" onClick={() => setIsExportModalOpen(true)}>
                             <i className="fas fa-download"></i> Export Selected
                         </button>
                     </div>
@@ -842,7 +908,7 @@ function App() {
                             className="form-control"
                             value={formData.title}
                             onChange={handleInputChange}
-                            placeholder="Enter expense title"
+                            placeholder="e.g., Groceries, Utility Bill, etc."
                         />
                         {validationErrors.title && (
                             <div className="error-message">
@@ -854,7 +920,7 @@ function App() {
 
                     <div className="form-group">
                         <label htmlFor="amount">
-                            Amount ($) <span className="required">*</span>
+                            Amount (PKR) <span className="required">*</span>
                         </label>
                         <input
                             type="number"
@@ -863,9 +929,9 @@ function App() {
                             className="form-control"
                             value={formData.amount}
                             onChange={handleInputChange}
-                            placeholder="0.00"
-                            min="0"
-                            step="0.01"
+                            placeholder="e.g., 1500"
+                            min="1"
+                            step="1"
                         />
                         {validationErrors.amount && (
                             <div className="error-message">
@@ -934,7 +1000,7 @@ function App() {
                         />
                     </div>
 
-                    <div className="form-actions">
+                    <div className="modal-actions">
                         <button type="submit" className="btn-primary">
                             <i className="fas fa-save"></i>
                             {currentScreen === SCREEN.ADD ? 'Add Expense' : 'Update Expense'}
@@ -990,157 +1056,182 @@ function App() {
                         <span className="report-period">This Month</span>
                     </div>
                     <div className="chart-container" style={{ height: '250px' }}>
-                        <CategoryChart expenses={expenses} />
+                        {expenses.length > 0 ? (
+                            <CategoryChart expenses={expenses} />
+                        ) : (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <p className="text-muted">No data to display</p>
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 <div className="report-card">
                     <div className="report-header">
                         <h3>Spending Trends</h3>
-                        <span className="report-period">Last 30 Days</span>
+                        <span className="report-period">Last 7 Days</span>
                     </div>
                     <div className="chart-container" style={{ height: '250px' }}>
-                        <TrendChart expenses={expenses} />
+                        {expenses.length > 0 ? (
+                            <TrendChart expenses={expenses} />
+                        ) : (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <p className="text-muted">No data to display</p>
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 <div className="report-card full-width">
                     <div className="report-header">
                         <h3>All Expenses</h3>
-                        <span className="report-period">{filteredExpenses.length} transactions</span>
+                        <span className="report-period">{filteredExpenses.length} transaction(s)</span>
                     </div>
-                    <div className="expenses-table">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>
-                                        <input 
-                                            type="checkbox"
-                                            checked={selectedExpenses.length === filteredExpenses.length && filteredExpenses.length > 0}
-                                            onChange={handleSelectAll}
-                                        />
-                                    </th>
-                                    <th>Date</th>
-                                    <th>Title</th>
-                                    <th>Category</th>
-                                    <th>Amount</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredExpenses.map(expense => (
-                                    <tr key={expense.id} className="expense-row">
-                                        <td>
-                                            <input 
-                                                type="checkbox"
-                                                checked={selectedExpenses.includes(expense.id)}
-                                                onChange={() => handleSelectExpense(expense.id)}
-                                            />
-                                        </td>
-                                        <td>{new Date(expense.date).toLocaleDateString()}</td>
-                                        <td>{expense.title}</td>
-                                        <td>
-                                            <span className="category-badge" style={{
-                                                backgroundColor: CATEGORIES.find(c => c.id === expense.category)?.color + '20',
-                                                color: CATEGORIES.find(c => c.id === expense.category)?.color
-                                            }}>
-                                                <i className={`fas ${CATEGORIES.find(c => c.id === expense.category)?.icon}`}></i>
-                                                {' '}{CATEGORIES.find(c => c.id === expense.category)?.name}
-                                            </span>
-                                        </td>
-                                        <td>${expense.amount.toFixed(2)}</td>
-                                        <td>
-                                            <div className="action-buttons">
-                                                <button 
-                                                    className="btn-icon"
-                                                    onClick={() => openEditModal(expense)}
-                                                    title="Edit"
-                                                >
-                                                    <i className="fas fa-edit"></i>
-                                                </button>
-                                                <button 
-                                                    className="btn-icon danger"
-                                                    onClick={() => handleDeleteExpense(expense.id)}
-                                                    title="Delete"
-                                                >
-                                                    <i className="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {selectedExpenses.length > 0 && (
-                        <div className="bulk-actions">
-                            <span>{selectedExpenses.length} items selected</span>
-                            <button className="danger-btn" onClick={handleBulkDelete}>
-                                <i className="fas fa-trash"></i> Delete Selected
-                            </button>
-                            <button className="primary" onClick={() => setIsExportModalOpen(true)}>
-                                <i className="fas fa-download"></i> Export Selected
-                            </button>
+                    
+                    {filteredExpenses.length === 0 ? (
+                        <div className="empty-state">
+                            <p>No expenses match your filters.</p>
                         </div>
+                    ) : (
+                        <>
+                            <div className="expenses-table">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={selectedExpenses.length === filteredExpenses.length}
+                                                    onChange={handleSelectAll}
+                                                />
+                                            </th>
+                                            <th>Date</th>
+                                            <th>Title</th>
+                                            <th>Category</th>
+                                            <th>Amount (PKR)</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredExpenses.map(expense => (
+                                            <tr key={expense.id} className="expense-row">
+                                                <td>
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedExpenses.includes(expense.id)}
+                                                        onChange={() => handleSelectExpense(expense.id)}
+                                                    />
+                                                </td>
+                                                <td>{new Date(expense.date).toLocaleDateString('en-PK')}</td>
+                                                <td>{expense.title}</td>
+                                                <td>
+                                                    <span className="category-badge" style={{
+                                                        backgroundColor: CATEGORIES.find(c => c.id === expense.category)?.color + '20',
+                                                        color: CATEGORIES.find(c => c.id === expense.category)?.color
+                                                    }}>
+                                                        <i className={`fas ${CATEGORIES.find(c => c.id === expense.category)?.icon}`}></i>
+                                                        {' '}{CATEGORIES.find(c => c.id === expense.category)?.name}
+                                                    </span>
+                                                </td>
+                                                <td>{formatPKR(expense.amount)}</td>
+                                                <td>
+                                                    <div className="action-buttons">
+                                                        <button 
+                                                            className="btn-icon"
+                                                            onClick={() => openEditModal(expense)}
+                                                            title="Edit"
+                                                        >
+                                                            <i className="fas fa-edit"></i>
+                                                        </button>
+                                                        <button 
+                                                            className="btn-icon danger"
+                                                            onClick={() => handleDeleteExpense(expense.id)}
+                                                            title="Delete"
+                                                        >
+                                                            <i className="fas fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {selectedExpenses.length > 0 && (
+                                <div className="bulk-actions">
+                                    <span>{selectedExpenses.length} item(s) selected</span>
+                                    <button className="btn-danger" onClick={handleBulkDelete}>
+                                        <i className="fas fa-trash"></i> Delete Selected
+                                    </button>
+                                    <button className="btn-primary" onClick={() => setIsExportModalOpen(true)}>
+                                        <i className="fas fa-download"></i> Export Selected
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
 
-                <div className="report-card">
-                    <div className="report-header">
-                        <h3>Category Breakdown</h3>
-                        <span className="report-period">Details</span>
-                    </div>
-                    <div className="category-list">
-                        {topCategories.map(({ category, amount, name, icon, color }) => (
-                            <div key={category} className="category-item">
-                                <div className="category-info">
-                                    <i className={`fas ${icon}`} style={{ color }}></i>
-                                    <span>{name}</span>
+                {expenses.length > 0 && (
+                    <>
+                        <div className="report-card">
+                            <div className="report-header">
+                                <h3>Category Breakdown</h3>
+                                <span className="report-period">All Time</span>
+                            </div>
+                            <div className="category-list">
+                                {topCategories.map(({ category, amount, name, icon, color }) => (
+                                    <div key={category} className="category-item">
+                                        <div className="category-info">
+                                            <i className={`fas ${icon}`} style={{ color }}></i>
+                                            <span>{name}</span>
+                                        </div>
+                                        <div className="category-stats">
+                                            <strong>{formatPKR(amount)}</strong>
+                                            <span className="category-percentage">
+                                                ({((amount / totalExpenses) * 100).toFixed(1)}%)
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="report-card">
+                            <div className="report-header">
+                                <h3>Summary Statistics</h3>
+                                <span className="report-period">Overview</span>
+                            </div>
+                            <div className="stats-list">
+                                <div className="stat-item">
+                                    <span>Total Transactions</span>
+                                    <strong>{expenses.length}</strong>
                                 </div>
-                                <div className="category-stats">
-                                    <strong>${amount.toFixed(2)}</strong>
-                                    <span className="category-percentage">
-                                        ({((amount / totalExpenses) * 100).toFixed(1)}%)
-                                    </span>
+                                <div className="stat-item">
+                                    <span>Average per Transaction</span>
+                                    <strong>{formatPKR(averageExpense)}</strong>
+                                </div>
+                                <div className="stat-item">
+                                    <span>Highest Expense</span>
+                                    <strong>{formatPKR(Math.max(...expenses.map(e => e.amount)))}</strong>
+                                </div>
+                                <div className="stat-item">
+                                    <span>Lowest Expense</span>
+                                    <strong>{formatPKR(Math.min(...expenses.map(e => e.amount)))}</strong>
+                                </div>
+                                <div className="stat-item">
+                                    <span>Most Active Category</span>
+                                    <strong>{topCategories[0]?.name || 'N/A'}</strong>
+                                </div>
+                                <div className="stat-item">
+                                    <span>Total Categories Used</span>
+                                    <strong>{Object.keys(categoryTotals).length}</strong>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="report-card">
-                    <div className="report-header">
-                        <h3>Summary Statistics</h3>
-                        <span className="report-period">Overview</span>
-                    </div>
-                    <div className="stats-list">
-                        <div className="stat-item">
-                            <span>Total Transactions</span>
-                            <strong>{expenses.length}</strong>
                         </div>
-                        <div className="stat-item">
-                            <span>Average per Transaction</span>
-                            <strong>${averageExpense.toFixed(2)}</strong>
-                        </div>
-                        <div className="stat-item">
-                            <span>Highest Expense</span>
-                            <strong>${Math.max(...expenses.map(e => e.amount)).toFixed(2)}</strong>
-                        </div>
-                        <div className="stat-item">
-                            <span>Lowest Expense</span>
-                            <strong>${Math.min(...expenses.map(e => e.amount)).toFixed(2)}</strong>
-                        </div>
-                        <div className="stat-item">
-                            <span>Most Active Category</span>
-                            <strong>{topCategories[0]?.name || 'N/A'}</strong>
-                        </div>
-                        <div className="stat-item">
-                            <span>Total Categories Used</span>
-                            <strong>{Object.keys(categoryTotals).length}</strong>
-                        </div>
-                    </div>
-                </div>
+                    </>
+                )}
             </div>
         </div>
     );
@@ -1188,7 +1279,7 @@ function App() {
                     <div className="settings-item">
                         <div className="settings-info">
                             <label>Import Data</label>
-                            <p className="settings-description">Import expenses from a file</p>
+                            <p className="settings-description">Import expenses from a JSON file</p>
                         </div>
                         <div>
                             <input 
@@ -1214,6 +1305,7 @@ function App() {
                                 if (window.confirm('Are you sure you want to delete ALL expenses? This cannot be undone.')) {
                                     setExpenses([]);
                                     setSelectedExpenses([]);
+                                    setSelectedExpense(null);
                                     showToast('All data cleared', 'warning');
                                 }
                             }}
@@ -1228,27 +1320,30 @@ function App() {
                         <i className="fas fa-tags"></i>
                         Categories
                     </h2>
-                    {CATEGORIES.map(category => (
-                        <div key={category.id} className="settings-item">
-                            <div className="category-info">
-                                <i className={`fas ${category.icon}`} style={{ color: category.color }}></i>
-                                <div>
-                                    <span>{category.name}</span>
-                                    <p className="category-count">
-                                        {expenses.filter(e => e.category === category.id).length} items · 
-                                        ${expenses.filter(e => e.category === category.id)
-                                            .reduce((sum, e) => sum + e.amount, 0).toFixed(2)}
-                                    </p>
+                    {CATEGORIES.map(category => {
+                        const categoryExpenses = expenses.filter(e => e.category === category.id);
+                        const categoryTotal = categoryExpenses.reduce((sum, e) => sum + e.amount, 0);
+                        
+                        return (
+                            <div key={category.id} className="settings-item">
+                                <div className="category-info">
+                                    <i className={`fas ${category.icon}`} style={{ color: category.color }}></i>
+                                    <div>
+                                        <span>{category.name}</span>
+                                        <p className="category-count">
+                                            {categoryExpenses.length} item(s) · {formatPKR(categoryTotal)}
+                                        </p>
+                                    </div>
                                 </div>
+                                <span className="category-badge" style={{
+                                    backgroundColor: category.color + '20',
+                                    color: category.color
+                                }}>
+                                    {totalExpenses > 0 ? ((categoryTotal / totalExpenses) * 100).toFixed(1) : 0}%
+                                </span>
                             </div>
-                            <span className="category-badge" style={{
-                                backgroundColor: category.color + '20',
-                                color: category.color
-                            }}>
-                                {((expenses.filter(e => e.category === category.id).reduce((sum, e) => sum + e.amount, 0) / totalExpenses) * 100 || 0).toFixed(1)}%
-                            </span>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 <div className="settings-section">
@@ -1261,14 +1356,14 @@ function App() {
                             <label>Version</label>
                             <p className="settings-description">Current version of the application</p>
                         </div>
-                        <span className="version-badge">1.0.0</span>
+                        <span className="version-badge">2.0.0</span>
                     </div>
                     <div className="settings-item">
                         <div className="settings-info">
-                            <label>Developer</label>
-                            <p className="settings-description">Built with React and Chart.js</p>
+                            <label>Currency</label>
+                            <p className="settings-description">All amounts are in Pakistani Rupees (PKR)</p>
                         </div>
-                        <span>Expense Tracker Pro</span>
+                        <span>PKR</span>
                     </div>
                     <div className="settings-item">
                         <div className="settings-info">
@@ -1279,10 +1374,10 @@ function App() {
                     </div>
                     <div className="settings-item">
                         <div className="settings-info">
-                            <label>Last Updated</label>
-                            <p className="settings-description">Data synchronization status</p>
+                            <label>Data Storage</label>
+                            <p className="settings-description">Data is saved in your browser's local storage</p>
                         </div>
-                        <span>{new Date().toLocaleDateString()}</span>
+                        <span><i className="fas fa-check-circle" style={{ color: 'var(--secondary)' }}></i></span>
                     </div>
                 </div>
             </div>
@@ -1295,7 +1390,7 @@ function App() {
             <div className="navbar-container">
                 <div className="navbar-logo">
                     <i className="fas fa-chart-pie"></i>
-                    <span>ExpenseTracker</span>
+                    <span>ExpenseTracker PKR</span>
                 </div>
 
                 <button 
@@ -1424,7 +1519,7 @@ function App() {
                             <p>
                                 <i className="fas fa-info-circle"></i>
                                 {selectedExpenses.length > 0 
-                                    ? `Exporting ${selectedExpenses.length} selected expenses`
+                                    ? `Exporting ${selectedExpenses.length} selected expense(s)`
                                     : 'Exporting all expenses'
                                 }
                             </p>
@@ -1445,24 +1540,30 @@ function App() {
         );
     };
 
+    // Empty state component
+    if (isLoading) {
+        return (
+            <div className="app-shell">
+                {renderNavbar()}
+                <main className="main-content">
+                    <div className="loading-spinner">
+                        <div className="spinner"></div>
+                        <p>Loading your expenses...</p>
+                    </div>
+                </main>
+            </div>
+        );
+    }
+
     return (
         <div className="app-shell">
             {renderNavbar()}
             
             <main className="main-content">
-                {isLoading ? (
-                    <div className="loading-spinner">
-                        <div className="spinner"></div>
-                        <p>Loading your expenses...</p>
-                    </div>
-                ) : (
-                    <>
-                        {currentScreen === SCREEN.DASHBOARD && renderDashboard()}
-                        {(currentScreen === SCREEN.ADD || currentScreen === SCREEN.EDIT) && renderAddEditForm()}
-                        {currentScreen === SCREEN.REPORTS && renderReports()}
-                        {currentScreen === SCREEN.SETTINGS && renderSettings()}
-                    </>
-                )}
+                {currentScreen === SCREEN.DASHBOARD && renderDashboard()}
+                {(currentScreen === SCREEN.ADD || currentScreen === SCREEN.EDIT) && renderAddEditForm()}
+                {currentScreen === SCREEN.REPORTS && renderReports()}
+                {currentScreen === SCREEN.SETTINGS && renderSettings()}
             </main>
 
             {/* Toast Notifications */}
@@ -1484,4 +1585,5 @@ function App() {
 }
 
 // Render the app
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
